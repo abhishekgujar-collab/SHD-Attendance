@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#1a2e4a" />
+  <title>SHD Attendance Portal</title>
+
+  <!--
+  ============================================================
+   SCHOOL OF HOLISTIC DEVELOPMENT — ATTENDANCE SYSTEM
+   Version : 2.0.0
+   Author  : Built for MIT ADT University | SHD Faculty
+   Flow    : Screen 1 (Login) → Screen 2 (Session Setup) → Screen 3 (Roster)
+   Notes   : Single-file PWA. Works offline with fallback data.
+             Deploy to GitHub Pages or Netlify as-is.
+  ============================================================
+  -->
+
+  <style>
+    /* =============================================
+       DESIGN TOKENS — Edit colours/fonts here only
+       ============================================= */
+    :root {
+      --clr-navy:     #1a2e4a;
+      --clr-navy-lt:  #243d61;
+      --clr-teal:     #2a9d8f;
+      --clr-teal-lt:  #3ab5a6;
+      --clr-amber:    #e9c46a;
+      --clr-present:  #27ae60;
+      --clr-absent:   #e74c3c;
+      --clr-bg:       #f0f4f8;
+      --clr-surface:  #ffffff;
+      --clr-text:     #1c2b3a;
+      --clr-muted:    #6b7c8d;
+      --clr-border:   #d8e2ec;
+      --radius-lg:    14px;
+      --radius-md:    10px;
+      --radius-sm:    6px;
+      --shadow-card:  0 2px 16px rgba(26,46,74,.10);
+      --shadow-btn:   0 4px 14px rgba(0,0,0,.18);
+      --font-main:    'Segoe UI', system-ui, -apple-system, sans-serif;
+      --transition:   .18s ease;
+    }
+
+    /* ---- RESET ---- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: var(--font-main);
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      min-height: 100dvh;
+      overscroll-behavior: none;
+    }
+    button { cursor: pointer; border: none; font-family: inherit; }
+    input, select { font-family: inherit; }
+
+    /* =============================================
+       HEADER
+       ============================================= */
+    .app-header {
+      background: var(--clr-navy);
+      color: #fff;
+      padding: 14px 18px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,.25);
+    }
+    .logo-mark {
+      width: 40px; height: 40px;
+      background: var(--clr-teal);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1rem;
+      color: #fff; flex-shrink: 0;
+    }
+    .hd-text { flex: 1; }
+    .hd-text h1 { font-size: .88rem; font-weight: 700; line-height: 1.2; }
+    .hd-text p  { font-size: .72rem; color: rgba(255,255,255,.62); margin-top: 1px; }
+    .session-badge {
+      background: var(--clr-teal);
+      color: #fff; font-size: .68rem; font-weight: 700;
+      padding: 4px 9px; border-radius: 20px; white-space: nowrap;
+    }
+
+    /* Step indicator in header */
+    .step-indicator {
+      display: flex; gap: 5px; align-items: center;
+    }
+    .step-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255,255,255,.28);
+      transition: background .3s;
+    }
+    .step-dot.active   { background: var(--clr-teal); }
+    .step-dot.complete { background: var(--clr-amber); }
+
+    /* =============================================
+       LOADING OVERLAY
+       ============================================= */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: var(--clr-navy);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px; z-index: 9999;
+      transition: opacity .4s ease;
+    }
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 54px; height: 54px;
+      border: 5px solid rgba(255,255,255,.15);
+      border-top-color: var(--clr-teal);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-overlay p { color: rgba(255,255,255,.75); font-size: .88rem; letter-spacing: .04em; }
+
+    /* =============================================
+       TOAST
+       ============================================= */
+    #toast {
+      position: fixed; bottom: 90px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--clr-navy); color: #fff;
+      padding: 10px 22px; border-radius: 30px;
+      font-size: .82rem; font-weight: 600;
+      box-shadow: var(--shadow-btn);
+      opacity: 0; transition: opacity .25s, transform .25s;
+      z-index: 500; white-space: nowrap; pointer-events: none;
+    }
+    #toast.show              { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.toast-success     { background: var(--clr-present); }
+    #toast.toast-error       { background: var(--clr-absent); }
+    #toast.toast-info        { background: var(--clr-teal); }
+
+    /* =============================================
+       SCREEN MANAGEMENT
+       All three screens live in the DOM; only one is visible.
+       ============================================= */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* =============================================
+       SHARED LAYOUT
+       ============================================= */
+    .app-body { padding: 16px; max-width: 680px; margin: 0 auto; }
+
+    /* ---- CARDS ---- */
+    .card {
+      background: var(--clr-surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      padding: 24px 20px 28px;
+      margin-bottom: 16px;
+    }
+    .card-eyebrow {
+      font-size: .7rem; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--clr-teal); margin-bottom: 6px;
+    }
+    .card h2 {
+      font-size: 1.18rem; font-weight: 800; color: var(--clr-navy);
+      margin-bottom: 6px; line-height: 1.3;
+    }
+    .card .card-sub {
+      font-size: .8rem; color: var(--clr-muted); margin-bottom: 22px; line-height: 1.5;
+    }
+
+    /* ---- FORM ---- */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block; font-size: .78rem; font-weight: 600;
+      color: var(--clr-muted); margin-bottom: 5px; letter-spacing: .02em;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%; padding: 12px 14px;
+      border: 1.5px solid var(--clr-border);
+      border-radius: var(--radius-md);
+      font-size: .95rem; color: var(--clr-text);
+      background: #f7fafc; outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      -webkit-appearance: none; appearance: none;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      border-color: var(--clr-teal);
+      box-shadow: 0 0 0 3px rgba(42,157,143,.15);
+      background: #fff;
+    }
+    .form-group input[type="password"] { letter-spacing: .12em; }
+    .select-wrap { position: relative; }
+    .select-wrap::after {
+      content: '▾'; position: absolute; right: 14px; top: 50%;
+      transform: translateY(-50%); color: var(--clr-muted); pointer-events: none;
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* Error message under a field */
+    .field-error {
+      font-size: .72rem; color: var(--clr-absent);
+      margin-top: 4px; display: none;
+    }
+    .field-error.visible { display: block; }
+
+    /* ---- PRIMARY BUTTON ---- */
+    .btn-primary {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, var(--clr-teal), var(--clr-navy));
+      color: #fff; font-size: 1rem; font-weight: 700;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-btn); letter-spacing: .02em;
+      margin-top: 8px;
+      transition: opacity var(--transition), transform var(--transition);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary:active { opacity: .85; transform: scale(.98); }
+
+    /* ---- BACK LINK ---- */
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: .8rem; font-weight: 600; color: var(--clr-muted);
+      background: none; padding: 0; margin-bottom: 14px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .back-link:active { color: var(--clr-teal); }
+
+    /* =============================================
+       SCREEN 1 — LOGIN: special hero layout
+       ============================================= */
+    #screen-login .login-hero {
+      background: linear-gradient(145deg, var(--clr-navy), var(--clr-navy-lt));
+      padding: 36px 20px 28px;
+      text-align: center;
+      color: #fff;
+    }
+    #screen-login .login-hero .hero-logo {
+      width: 64px; height: 64px;
+      background: var(--clr-teal);
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; font-weight: 900;
+      margin: 0 auto 14px;
+      box-shadow: 0 8px 24px rgba(42,157,143,.4);
+    }
+    #screen-login .login-hero h2 {
+      font-size: 1.3rem; font-weight: 800; margin-bottom: 4px;
+    }
+    #screen-login .login-hero p {
+      font-size: .78rem; color: rgba(255,255,255,.62);
+    }
+    #screen-login .login-body {
+      background: var(--clr-surface);
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+      padding: 24px 20px 28px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 16px;
+    }
+
+    /* Dept grid selector */
+    .dept-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      margin-bottom: 4px;
+    }
+    .dept-option {
+      border: 1.5px solid var(--clr-border);
+      border-radius: var(--radius-md);
+      padding: 10px 8px;
+      text-align: center; cursor: pointer;
+      background: #f7fafc;
+      transition: border-color .15s, background .15s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dept-option:active { transform: scale(.96); }
+    .dept-option.selected {
+      border-color: var(--clr-teal);
+      background: rgba(42,157,143,.08);
+    }
+    .dept-option .dept-code {
+      font-size: .82rem; font-weight: 800; color: var(--clr-navy);
+      margin-bottom: 2px;
+    }
+    .dept-option.selected .dept-code { color: var(--clr-teal); }
+    .dept-option .dept-fullname {
+      font-size: .62rem; color: var(--clr-muted); line-height: 1.3;
+    }
+    /* FIL spans full width (5th item, odd count) */
+    .dept-option.dept-span { grid-column: 1 / -1; }
+
+    /* =============================================
+       SCREEN 2 — SESSION SETUP
+       ============================================= */
+    #screen-session .faculty-banner {
+      background: var(--clr-navy);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: .82rem;
+    }
+    #screen-session .faculty-banner strong { font-size: .9rem; }
+    #screen-session .faculty-banner .dept-tag {
+      background: var(--clr-teal);
+      padding: 3px 10px; border-radius: 20px;
+      font-size: .7rem; font-weight: 700; margin-left: auto;
+      white-space: nowrap;
+    }
+
+    /* =============================================
+       SCREEN 3 — ROSTER
+       ============================================= */
+    .session-summary {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+    }
+    .session-pill {
+      background: var(--clr-surface);
+      border: 1.5px solid var(--clr-border);
+      border-radius: 30px;
+      padding: 5px 13px;
+      font-size: .73rem; font-weight: 600; color: var(--clr-navy);
+    }
+    .session-pill span { color: var(--clr-teal); }
+
+    .stats-bar {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: var(--clr-surface);
+      border-radius: var(--radius-md);
+      padding: 12px 10px; text-align: center;
+      box-shadow: var(--shadow-card);
+    }
+    .stat-num         { font-size: 1.6rem; font-weight: 800; line-height: 1; color: var(--clr-navy); }
+    .stat-num.present { color: var(--clr-present); }
+    .stat-num.absent  { color: var(--clr-absent); }
+    .stat-lbl { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--clr-muted); margin-top: 3px; }
+
+    /* Bulk action buttons */
+    .bulk-actions {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      margin-bottom: 12px;
+    }
+    .btn-bulk-present, .btn-bulk-absent {
+      padding: 11px 0; border-radius: var(--radius-md);
+      font-size: .82rem; font-weight: 700; letter-spacing: .02em;
+      -webkit-tap-highlight-color: transparent;
+      transition: opacity .15s, transform .12s;
+    }
+    .btn-bulk-present:active, .btn-bulk-absent:active { transform: scale(.97); opacity: .88; }
+    .btn-bulk-present { background: rgba(39,174,96,.12); color: var(--clr-present); border: 1.5px solid var(--clr-present); }
+    .btn-bulk-absent  { background: rgba(231,76,60,.10);  color: var(--clr-absent);  border: 1.5px solid var(--clr-absent); }
+
+    /* School group header */
+    .school-group-header {
+      background: var(--clr-navy); color: #fff;
+      padding: 9px 16px; border-radius: var(--radius-sm);
+      font-size: .75rem; font-weight: 800;
+      letter-spacing: .08em; text-transform: uppercase;
+      margin: 16px 0 6px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .school-count {
+      background: var(--clr-teal); border-radius: 12px;
+      padding: 2px 8px; font-size: .68rem;
+    }
+
+    /* Student card */
+    .student-card {
+      background: var(--clr-surface);
+      border-radius: var(--radius-md);
+      padding: 13px 14px; margin-bottom: 8px;
+      box-shadow: var(--shadow-card);
+      display: flex; align-items: center; gap: 12px;
+      border-left: 4px solid var(--clr-border);
+      transition: border-color var(--transition);
+    }
+    .student-card.marked-present { border-left-color: var(--clr-present); }
+    .student-card.marked-absent  { border-left-color: var(--clr-absent); }
+
+    .stu-info { flex: 1; min-width: 0; }
+    .stu-name { font-size: .92rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stu-meta { font-size: .71rem; color: var(--clr-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .action-btns { display: flex; gap: 7px; flex-shrink: 0; }
+    .btn-present, .btn-absent {
+      width: 48px; height: 48px;
+      border-radius: var(--radius-sm);
+      font-size: 1.05rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .12s, opacity .12s, box-shadow .12s;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 2px 6px rgba(0,0,0,.14);
+    }
+    .btn-present { background: var(--clr-present); color: #fff; }
+    .btn-absent  { background: var(--clr-absent);  color: #fff; }
+    .btn-present:active, .btn-absent:active { transform: scale(.88); }
+    .btn-present.active  { box-shadow: 0 0 0 3px rgba(255,255,255,.5), 0 2px 8px rgba(0,0,0,.25); transform: scale(1.08); }
+    .btn-absent.active   { box-shadow: 0 0 0 3px rgba(255,255,255,.5), 0 2px 8px rgba(0,0,0,.25); transform: scale(1.08); }
+    .btn-present.inactive { opacity: .28; }
+    .btn-absent.inactive  { opacity: .28; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--clr-muted); }
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .empty-state p { font-size: .9rem; }
+
+    /* =============================================
+       STICKY BOTTOM BAR
+       ============================================= */
+    #bottom-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--clr-surface);
+      border-top: 1.5px solid var(--clr-border);
+      padding: 10px 16px 14px;
+      display: none; justify-content: center;
+      z-index: 200;
+      box-shadow: 0 -4px 18px rgba(0,0,0,.10);
+    }
+    #bottom-bar.visible { display: flex; }
+    #btn-csv {
+      background: linear-gradient(135deg, var(--clr-amber) 0%, #f4a261 100%);
+      color: var(--clr-navy); font-weight: 800; font-size: .9rem;
+      padding: 13px 28px; border-radius: 30px;
+      box-shadow: var(--shadow-btn); letter-spacing: .02em;
+      transition: transform .12s, opacity .12s;
+      -webkit-tap-highlight-color: transparent;
+      width: 100%; max-width: 420px;
+    }
+    #btn-csv:active { transform: scale(.97); opacity: .9; }
+
+    .bottom-spacer { height: 80px; }
+
+    /* =============================================
+       RESPONSIVE
+       ============================================= */
+    @media (min-width: 500px) {
+      .app-body { padding: 20px 18px; }
+      .btn-present, .btn-absent { width: 54px; height: 54px; font-size: 1.15rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p id="loading-msg">Loading…</p>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast"></div>
+
+  <!-- HEADER (always visible) -->
+  <header class="app-header">
+    <div class="logo-mark">SHD</div>
+    <div class="hd-text">
+      <h1>Attendance Portal</h1>
+      <p>School of Holistic Development · MIT ADT</p>
+    </div>
+    <div class="step-indicator">
+      <div class="step-dot active"  id="dot-1"></div>
+      <div class="step-dot"         id="dot-2"></div>
+      <div class="step-dot"         id="dot-3"></div>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       SCREEN 1 — LOGIN
+       Faculty enters User ID, Password, and selects Department.
+       ============================================================ -->
+  <div id="screen-login" class="screen active">
+    <div id="screen-login-inner">
+
+      <!-- Hero banner -->
+      <div class="login-hero">
+        <div class="hero-logo">SHD</div>
+        <h2>Faculty Login</h2>
+        <p>MIT ADT University · School of Holistic Development</p>
+      </div>
+
+      <!-- Login form body -->
+      <div class="login-body">
+
+        <!-- ==========================================
+             DEMO CREDENTIALS BOX
+             Remove or hide this box before going live with real faculty.
+             =========================================== -->
+        <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 14px; margin-bottom:18px;">
+          <div style="font-size:.72rem; font-weight:800; color:#16a34a; letter-spacing:.06em; text-transform:uppercase; margin-bottom:8px;">🔑 Demo Login Credentials</div>
+          <table style="width:100%; border-collapse:collapse; font-size:.75rem; color:#1c2b3a;">
+            <thead>
+              <tr style="color:#6b7c8d; font-weight:700;">
+                <td style="padding:3px 6px 3px 0;">User ID</td>
+                <td style="padding:3px 6px;">Password</td>
+                <td style="padding:3px 0;">Department</td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">DEMO</td>   <td style="padding:2px 6px;">demo123</td>  <td style="padding:2px 0;">HP</td></tr>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">HP001</td>  <td style="padding:2px 6px;">hp@shd24</td> <td style="padding:2px 0;">HP</td></tr>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">EC001</td>  <td style="padding:2px 6px;">ec@shd24</td> <td style="padding:2px 0;">ECHPP</td></tr>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">CA001</td>  <td style="padding:2px 6px;">ca@shd24</td> <td style="padding:2px 0;">CAPA</td></tr>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">SI001</td>  <td style="padding:2px 6px;">si@shd24</td> <td style="padding:2px 0;">SISM</td></tr>
+              <tr><td style="padding:2px 6px 2px 0; font-weight:700;">FI001</td>  <td style="padding:2px 6px;">fi@shd24</td> <td style="padding:2px 0;">FIL</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ==========================================
+             TODO: FACULTY USER ID & PASSWORD VERIFICATION LOGIC
+             Instructions: Replace the FACULTY_CREDENTIALS object in the
+             JavaScript section (search for "FACULTY_CREDENTIALS") with
+             the real user IDs and passwords for your faculty members.
+
+             HOW TO EDIT:
+             1. In the JS below, find the object named FACULTY_CREDENTIALS.
+             2. Add entries like: "FAC001": { password: "pass123", name: "Dr. Priya Sharma", dept: "HP" }
+             3. The login screen will validate User ID + Password + Department
+                before letting the faculty proceed to the next screen.
+             ========================================== -->
+
+        <div class="form-group">
+          <label for="login-userid">User ID</label>
+          <input type="text" id="login-userid" placeholder="e.g., DEMO or HP001" autocomplete="username" autocapitalize="none" />
+          <div class="field-error" id="err-userid">Please enter your User ID.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password" />
+          <div class="field-error" id="err-password">Please enter your password.</div>
+        </div>
+
+        <div class="form-group">
+          <label>Select Your Department</label>
+          <div class="dept-grid" id="dept-grid">
+            <div class="dept-option" data-dept="HP">
+              <div class="dept-code">HP</div>
+              <div class="dept-fullname">Health Practices</div>
+            </div>
+            <div class="dept-option" data-dept="ECHPP">
+              <div class="dept-code">ECHPP</div>
+              <div class="dept-fullname">English Communication for Holistic Personality Programme</div>
+            </div>
+            <div class="dept-option" data-dept="CAPA">
+              <div class="dept-code">CAPA</div>
+              <div class="dept-fullname">Creative Arts and Performing Arts</div>
+            </div>
+            <div class="dept-option" data-dept="SISM">
+              <div class="dept-code">SISM</div>
+              <div class="dept-fullname">Societal Immersion, Spirituality and Morality</div>
+            </div>
+            <div class="dept-option dept-span" data-dept="FIL">
+              <div class="dept-code">FIL</div>
+              <div class="dept-fullname">Foreign &amp; Indian Languages</div>
+            </div>
+          </div>
+          <div class="field-error" id="err-dept">Please select your department.</div>
+        </div>
+
+        <div class="field-error" id="err-credentials" style="display:none; font-size:.8rem; margin-bottom:10px;">
+          ❌ Invalid User ID or Password. Please try again.
+        </div>
+
+        <button class="btn-primary" id="btn-login">Login →</button>
+      </div>
+
+    </div>
+  </div><!-- /#screen-login -->
+
+
+  <!-- ============================================================
+       SCREEN 2 — SESSION SETUP
+       Faculty selects Subject, Year, Batch, and Day.
+       ============================================================ -->
+  <div id="screen-session" class="screen">
+    <div class="app-body">
+
+      <button class="back-link" id="btn-back-to-login">← Change Login</button>
+
+      <!-- Faculty identity banner -->
+      <div class="faculty-banner" id="faculty-banner">
+        <div>
+          <div style="font-size:.68rem; color:rgba(255,255,255,.6); margin-bottom:2px;">Logged in as</div>
+          <strong id="banner-name">—</strong>
+        </div>
+        <div class="dept-tag" id="banner-dept">—</div>
+      </div>
+
+      <div class="card">
+        <p class="card-eyebrow">Step 2 of 3</p>
+        <h2>Set up today's session</h2>
+        <p class="card-sub">Choose the subject, class year, batch, and day before loading the student list.</p>
+
+        <div class="form-group">
+          <label for="subject-name">Subject / Module *</label>
+          <input type="text" id="subject-name" placeholder="e.g., Yoga Anatomy – Module 2" />
+          <div class="field-error" id="err-subject">Please enter the subject or module name.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="current-year">Current Academic Year *</label>
+          <div class="select-wrap">
+            <select id="current-year">
+              <option value="">— Select Year —</option>
+              <option value="First Year">First Year</option>
+              <option value="Second Year">Second Year</option>
+              <option value="Third Year">Third Year</option>
+              <option value="Fourth Year">Fourth Year</option>
+            </select>
+          </div>
+          <div class="field-error" id="err-year">Please select the academic year.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="batch-name">Batch *</label>
+            <input type="text" id="batch-name" placeholder="e.g., A / Morning" />
+            <div class="field-error" id="err-batch">Required.</div>
+          </div>
+          <div class="form-group">
+            <label for="day-of-attending">Day *</label>
+            <div class="select-wrap">
+              <select id="day-of-attending">
+                <option value="">— Day —</option>
+                <option>Monday</option><option>Tuesday</option>
+                <option>Wednesday</option><option>Thursday</option>
+                <option>Friday</option><option>Saturday</option><option>Sunday</option>
+              </select>
+            </div>
+            <div class="field-error" id="err-day">Required.</div>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btn-load-roster">📋 Load Student Roster →</button>
+      </div>
+
+    </div>
+  </div><!-- /#screen-session -->
+
+
+  <!-- ============================================================
+       SCREEN 3 — ATTENDANCE ROSTER
+       Student list filtered by Department + Batch, grouped by school.
+       ============================================================ -->
+  <div id="screen-roster" class="screen">
+    <div class="app-body">
+
+      <button class="back-link" id="btn-back-to-session">← Change Session</button>
+
+      <!-- Session summary pills -->
+      <div class="session-summary" id="session-summary-pills"></div>
+
+      <!-- Stats -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-lbl">Total</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num present" id="stat-present">0</div>
+          <div class="stat-lbl">Present</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num absent" id="stat-absent">0</div>
+          <div class="stat-lbl">Absent</div>
+        </div>
+      </div>
+
+      <!-- Bulk mark buttons -->
+      <div class="bulk-actions">
+        <button class="btn-bulk-present" id="btn-all-present">✔ Mark All Present</button>
+        <button class="btn-bulk-absent"  id="btn-all-absent">✘ Mark All Absent</button>
+      </div>
+
+      <!-- Student list (rendered by JS) -->
+      <div id="student-list"></div>
+
+      <div class="bottom-spacer"></div>
+    </div>
+  </div><!-- /#screen-roster -->
+
+  <!-- STICKY BOTTOM BAR -->
+  <div id="bottom-bar">
+    <button id="btn-csv">⬇ Download Daily CSV Report</button>
+  </div>
+
+
+  <!-- ============================================================
+       JAVASCRIPT — ALL APPLICATION LOGIC
+       ============================================================ -->
+  <script>
+    "use strict";
+
+    // ==========================================
+    // TODO: PASTE TARGET DEPLOYED GOOGLE WEBHOOK URL HERE
+    // Instructions:
+    // 1. Open your Google Apps Script project, click "Deploy > New Deployment".
+    // 2. After deploying, copy the Web App URL that ends in /exec.
+    // 3. Replace the string below with that URL (keep the quotes).
+    // ==========================================
+    const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzzXMa3qImdDtcpKleJ5GlpTl-TxwCRGvSQ8DyqEBI1txiN52tkdNC5-WIlwUBMvT76/exec";
+
+    // ==========================================
+    // FACULTY CREDENTIALS
+    // This is the login directory. Each entry is one faculty member.
+    //
+    // HOW TO ADD / EDIT FACULTY:
+    // 1. Each line follows this pattern:
+    //    "USERID": { password: "PASSWORD", name: "Full Name", dept: "DEPT_CODE" }
+    // 2. DEPT_CODE must be one of: HP, ECHPP, CAPA, SISM, FIL
+    // 3. The department selected on the login screen must MATCH this dept value.
+    // 4. To remove a faculty member, delete their entire line.
+    // ==========================================
+    const FACULTY_CREDENTIALS = {
+      //
+      // ── DEMO LOGIN CREDENTIALS ──────────────────────────────────────────
+      //  Use these to test the system. Share with faculty before going live.
+      //
+      //  User ID   │ Password    │ Name                        │ Department
+      //  ──────────┼─────────────┼─────────────────────────────┼───────────
+      //  HP001     │ hp@shd24    │ Dr. Priya Sharma            │ HP
+      //  EC001     │ ec@shd24    │ Prof. Anil Kulkarni         │ ECHPP
+      //  CA001     │ ca@shd24    │ Ms. Rekha Nair              │ CAPA
+      //  SI001     │ si@shd24    │ Dr. Suresh Patil            │ SISM
+      //  FI001     │ fi@shd24    │ Ms. Anita Desai             │ FIL
+      //  DEMO      │ demo123     │ Demo Faculty                │ HP  ← quick test
+      // ────────────────────────────────────────────────────────────────────
+
+      "HP001":  { password: "hp@shd24",  name: "Dr. Priya Sharma",       dept: "HP"    },
+      "HP002":  { password: "hp@shd24",  name: "Mr. Vivek Deshmukh",     dept: "HP"    },
+      "EC001":  { password: "ec@shd24",  name: "Prof. Anil Kulkarni",    dept: "ECHPP" },
+      "EC002":  { password: "ec@shd24",  name: "Ms. Sunita Bhatt",       dept: "ECHPP" },
+      "CA001":  { password: "ca@shd24",  name: "Ms. Rekha Nair",         dept: "CAPA"  },
+      "CA002":  { password: "ca@shd24",  name: "Mr. Prakash Rao",        dept: "CAPA"  },
+      "SI001":  { password: "si@shd24",  name: "Dr. Suresh Patil",       dept: "SISM"  },
+      "SI002":  { password: "si@shd24",  name: "Ms. Vaishali Joshi",     dept: "SISM"  },
+      "FI001":  { password: "fi@shd24",  name: "Ms. Anita Desai",        dept: "FIL"   },
+      "FI002":  { password: "fi@shd24",  name: "Mr. Rajan Menon",        dept: "FIL"   },
+      "DEMO":   { password: "demo123",   name: "Demo Faculty",           dept: "HP"    },
+
+      // ---- ADD MORE FACULTY BELOW THIS LINE ----
+      // "HP003": { password: "newpass", name: "New Faculty Name", dept: "HP" },
+    };
+
+    // ==========================================
+    // DEPARTMENT FULL NAMES (for display only)
+    // ==========================================
+    const DEPT_NAMES = {
+      "HP":    "Health Practices",
+      "ECHPP": "English Communication for Holistic Personality Programme",
+      "CAPA":  "Creative Arts and Performing Arts",
+      "SISM":  "Societal Immersion, Spirituality and Morality",
+      "FIL":   "Foreign & Indian Languages",
+    };
+
+    // ==========================================
+    // FALLBACK STUDENT DATA
+    // Used when the internet or webhook is unavailable.
+    // Each object = one student. Follow the same format to add more.
+    // Batch values here MUST match what faculty types in the Batch field.
+    // ==========================================
+    const FALLBACK_STUDENTS = [
+      // =====================================================================
+      // HP — Health Practices
+      // Batch A (SOC, SOE, SOM)
+      // =====================================================================
+      { Enrollment_No:"SHD-HP-001", Student_Name:"Aarav Mehta",         Name_of_School:"SOC", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-002", Student_Name:"Disha Pawar",         Name_of_School:"SOC", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-003", Student_Name:"Yash Kulkarni",       Name_of_School:"SOC", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-004", Student_Name:"Sneha Iyer",          Name_of_School:"SOC", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-005", Student_Name:"Rutuja Shinde",       Name_of_School:"SOE", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-006", Student_Name:"Omkar Bhosale",       Name_of_School:"SOE", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-007", Student_Name:"Prachi Desai",        Name_of_School:"SOE", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-008", Student_Name:"Tanmay Joshi",        Name_of_School:"SOM", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-009", Student_Name:"Manasi Kadam",        Name_of_School:"SOM", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-010", Student_Name:"Siddhesh More",       Name_of_School:"SOM", SHD_Department:"HP", Batch:"A", Year_of_Admission:"2022" },
+      // HP — Batch B
+      { Enrollment_No:"SHD-HP-011", Student_Name:"Gauri Rane",          Name_of_School:"SOC", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-012", Student_Name:"Nikhil Wagh",         Name_of_School:"SOC", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-013", Student_Name:"Pooja Salunke",       Name_of_School:"SOC", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-014", Student_Name:"Rohan Gaikwad",       Name_of_School:"SOE", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-015", Student_Name:"Ashwini Mane",        Name_of_School:"SOE", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-HP-016", Student_Name:"Ketan Patil",         Name_of_School:"SOM", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-HP-017", Student_Name:"Saumya Deshpande",    Name_of_School:"SOM", SHD_Department:"HP", Batch:"B", Year_of_Admission:"2022" },
+
+      // =====================================================================
+      // ECHPP — English Communication for Holistic Personality Programme
+      // Batch A
+      // =====================================================================
+      { Enrollment_No:"SHD-EC-001", Student_Name:"Divya Nair",          Name_of_School:"SOC", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-002", Student_Name:"Aditya Sharma",       Name_of_School:"SOC", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-003", Student_Name:"Shruti Pandey",       Name_of_School:"SOC", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-004", Student_Name:"Rahul Kadam",         Name_of_School:"SOE", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-005", Student_Name:"Tejas Malhotra",      Name_of_School:"SOE", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-006", Student_Name:"Ananya Roy",          Name_of_School:"SOE", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-007", Student_Name:"Vikram Pandey",       Name_of_School:"SOM", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-008", Student_Name:"Neha Jain",           Name_of_School:"SOM", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-009", Student_Name:"Pratik Chavan",       Name_of_School:"SOM", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-010", Student_Name:"Riya Singh",          Name_of_School:"SOC", SHD_Department:"ECHPP", Batch:"A", Year_of_Admission:"2023" },
+      // ECHPP — Batch B
+      { Enrollment_No:"SHD-EC-011", Student_Name:"Pooja Shetty",        Name_of_School:"SOC", SHD_Department:"ECHPP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-012", Student_Name:"Sonal Bhosale",       Name_of_School:"SOE", SHD_Department:"ECHPP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-013", Student_Name:"Abhijit Ghole",       Name_of_School:"SOE", SHD_Department:"ECHPP", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-EC-014", Student_Name:"Swati Thakare",       Name_of_School:"SOM", SHD_Department:"ECHPP", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-EC-015", Student_Name:"Kunal Borse",         Name_of_School:"SOM", SHD_Department:"ECHPP", Batch:"B", Year_of_Admission:"2022" },
+
+      // =====================================================================
+      // CAPA — Creative Arts and Performing Arts
+      // Batch A
+      // =====================================================================
+      { Enrollment_No:"SHD-CA-001", Student_Name:"Arjun Thakur",        Name_of_School:"SOC", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-002", Student_Name:"Sakshi Kulkarni",     Name_of_School:"SOC", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-003", Student_Name:"Parth Deshpande",     Name_of_School:"SOC", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-004", Student_Name:"Siddharth Rane",      Name_of_School:"SOE", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-005", Student_Name:"Aishwarya Patil",     Name_of_School:"SOE", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-006", Student_Name:"Dev Jain",            Name_of_School:"SOM", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-007", Student_Name:"Rujuta Samant",       Name_of_School:"SOM", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-008", Student_Name:"Varun Naik",          Name_of_School:"SOM", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-009", Student_Name:"Meera Doshi",         Name_of_School:"SOC", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-010", Student_Name:"Harshada Jagtap",     Name_of_School:"SOE", SHD_Department:"CAPA", Batch:"A", Year_of_Admission:"2022" },
+      // CAPA — Batch B
+      { Enrollment_No:"SHD-CA-011", Student_Name:"Ishita Gupta",        Name_of_School:"SOE", SHD_Department:"CAPA", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-012", Student_Name:"Nisha Pillai",        Name_of_School:"SOM", SHD_Department:"CAPA", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-013", Student_Name:"Omkar Pawar",         Name_of_School:"SOC", SHD_Department:"CAPA", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-CA-014", Student_Name:"Pallavi Kale",        Name_of_School:"SOE", SHD_Department:"CAPA", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-CA-015", Student_Name:"Aniket Sutar",        Name_of_School:"SOM", SHD_Department:"CAPA", Batch:"B", Year_of_Admission:"2022" },
+
+      // =====================================================================
+      // SISM — Societal Immersion, Spirituality and Morality
+      // Batch A
+      // =====================================================================
+      { Enrollment_No:"SHD-SI-001", Student_Name:"Harish Bendre",       Name_of_School:"SOC", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-002", Student_Name:"Priyanka Salvi",      Name_of_School:"SOC", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-003", Student_Name:"Akash Tupe",          Name_of_School:"SOC", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-004", Student_Name:"Manish Kale",         Name_of_School:"SOE", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-005", Student_Name:"Deepti Jadhav",       Name_of_School:"SOE", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-006", Student_Name:"Ajay Pawar",          Name_of_School:"SOM", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-007", Student_Name:"Tejal Sawant",        Name_of_School:"SOM", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-008", Student_Name:"Sagar Shirke",        Name_of_School:"SOM", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-009", Student_Name:"Nandita Phadke",      Name_of_School:"SOC", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-010", Student_Name:"Rahul Shende",        Name_of_School:"SOE", SHD_Department:"SISM", Batch:"A", Year_of_Admission:"2022" },
+      // SISM — Batch B
+      { Enrollment_No:"SHD-SI-011", Student_Name:"Kavita Shinde",       Name_of_School:"SOC", SHD_Department:"SISM", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-012", Student_Name:"Rupali More",         Name_of_School:"SOE", SHD_Department:"SISM", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-SI-013", Student_Name:"Sanket Nimbalkar",    Name_of_School:"SOM", SHD_Department:"SISM", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-014", Student_Name:"Ashlesha Datar",      Name_of_School:"SOC", SHD_Department:"SISM", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-SI-015", Student_Name:"Vishal Mohite",       Name_of_School:"SOE", SHD_Department:"SISM", Batch:"B", Year_of_Admission:"2023" },
+
+      // =====================================================================
+      // FIL — Foreign & Indian Languages
+      // Batch A
+      // =====================================================================
+      { Enrollment_No:"SHD-FI-001", Student_Name:"Preethi Naidu",       Name_of_School:"SOC", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-002", Student_Name:"Ishaan Ghosh",        Name_of_School:"SOC", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-003", Student_Name:"Sayali Jadhav",       Name_of_School:"SOC", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-004", Student_Name:"Gauri Chavan",        Name_of_School:"SOE", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-005", Student_Name:"Vinay Gaikwad",       Name_of_School:"SOE", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-006", Student_Name:"Rohini Jadhav",       Name_of_School:"SOM", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-007", Student_Name:"Aditya Bhave",        Name_of_School:"SOM", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-008", Student_Name:"Vrushali Korde",      Name_of_School:"SOM", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-009", Student_Name:"Mihir Joshi",         Name_of_School:"SOC", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-010", Student_Name:"Komal Shinde",        Name_of_School:"SOE", SHD_Department:"FIL", Batch:"A", Year_of_Admission:"2022" },
+      // FIL — Batch B
+      { Enrollment_No:"SHD-FI-011", Student_Name:"Suresh Mane",         Name_of_School:"SOC", SHD_Department:"FIL", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-012", Student_Name:"Tejas Salve",         Name_of_School:"SOE", SHD_Department:"FIL", Batch:"B", Year_of_Admission:"2023" },
+      { Enrollment_No:"SHD-FI-013", Student_Name:"Madhuri Kulkarni",    Name_of_School:"SOM", SHD_Department:"FIL", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-014", Student_Name:"Rohan Bhosle",        Name_of_School:"SOC", SHD_Department:"FIL", Batch:"B", Year_of_Admission:"2022" },
+      { Enrollment_No:"SHD-FI-015", Student_Name:"Ashwini Patil",       Name_of_School:"SOE", SHD_Department:"FIL", Batch:"B", Year_of_Admission:"2023" },
+    ];
+
+    // ==========================================
+    // APPLICATION STATE
+    // Holds everything for the current session. Managed by code — do not edit.
+    // ==========================================
+    const state = {
+      allStudents:      [],
+      filteredStudents: [],
+      attendance:       {},
+      faculty: { userId: "", name: "", dept: "" },
+      session: { subject: "", currentYear: "", batch: "", dayOfAttending: "" },
+      selectedDept: "",
+    };
+
+    // ---- DOM REFERENCES ----
+    const $loadingOverlay  = document.getElementById("loading-overlay");
+    const $loadingMsg      = document.getElementById("loading-msg");
+    const $toast           = document.getElementById("toast");
+
+    // Screen 1
+    const $screenLogin     = document.getElementById("screen-login");
+    const $loginUserId     = document.getElementById("login-userid");
+    const $loginPassword   = document.getElementById("login-password");
+    const $deptGrid        = document.getElementById("dept-grid");
+    const $btnLogin        = document.getElementById("btn-login");
+    const $errUserId       = document.getElementById("err-userid");
+    const $errPassword     = document.getElementById("err-password");
+    const $errDept         = document.getElementById("err-dept");
+    const $errCreds        = document.getElementById("err-credentials");
+
+    // Screen 2
+    const $screenSession   = document.getElementById("screen-session");
+    const $facultyBanner   = document.getElementById("faculty-banner");
+    const $bannerName      = document.getElementById("banner-name");
+    const $bannerDept      = document.getElementById("banner-dept");
+    const $subjectName     = document.getElementById("subject-name");
+    const $currentYear     = document.getElementById("current-year");
+    const $batchName       = document.getElementById("batch-name");
+    const $dayOfAttending  = document.getElementById("day-of-attending");
+    const $btnLoadRoster   = document.getElementById("btn-load-roster");
+    const $btnBackToLogin  = document.getElementById("btn-back-to-login");
+
+    // Screen 3
+    const $screenRoster    = document.getElementById("screen-roster");
+    const $studentList     = document.getElementById("student-list");
+    const $sessionPills    = document.getElementById("session-summary-pills");
+    const $statTotal       = document.getElementById("stat-total");
+    const $statPresent     = document.getElementById("stat-present");
+    const $statAbsent      = document.getElementById("stat-absent");
+    const $btnAllPresent   = document.getElementById("btn-all-present");
+    const $btnAllAbsent    = document.getElementById("btn-all-absent");
+    const $btnBackToSess   = document.getElementById("btn-back-to-session");
+    const $bottomBar       = document.getElementById("bottom-bar");
+    const $btnCsv          = document.getElementById("btn-csv");
+
+    // Step dots
+    const $dot1 = document.getElementById("dot-1");
+    const $dot2 = document.getElementById("dot-2");
+    const $dot3 = document.getElementById("dot-3");
+
+    // ==========================================
+    // SCREEN NAVIGATION
+    // ==========================================
+    function showScreen(name) {
+      [$screenLogin, $screenSession, $screenRoster].forEach(s => s.classList.remove("active"));
+      [$dot1, $dot2, $dot3].forEach(d => { d.classList.remove("active","complete"); });
+
+      if (name === "login") {
+        $screenLogin.classList.add("active");
+        $dot1.classList.add("active");
+        $bottomBar.classList.remove("visible");
+      } else if (name === "session") {
+        $screenSession.classList.add("active");
+        $dot1.classList.add("complete");
+        $dot2.classList.add("active");
+        $bottomBar.classList.remove("visible");
+      } else if (name === "roster") {
+        $screenRoster.classList.add("active");
+        $dot1.classList.add("complete");
+        $dot2.classList.add("complete");
+        $dot3.classList.add("active");
+        $bottomBar.classList.add("visible");
+      }
+    }
+
+    // ==========================================
+    // LOADING OVERLAY
+    // ==========================================
+    function showLoading(msg = "Loading…") {
+      $loadingMsg.textContent = msg;
+      $loadingOverlay.classList.remove("hidden");
+    }
+    function hideLoading() {
+      $loadingOverlay.classList.add("hidden");
+    }
+
+    // ==========================================
+    // TOAST
+    // ==========================================
+    let toastTimer = null;
+    function showToast(msg, type = "success") {
+      $toast.textContent = msg;
+      $toast.className   = `show toast-${type}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { $toast.className = ""; }, 2400);
+    }
+
+    // ==========================================
+    // DATE / TIME HELPERS
+    // ==========================================
+    function getTodayFormatted() {
+      const d = new Date();
+      return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+    }
+    function getTimeFormatted() {
+      const d = new Date();
+      let h = d.getHours(), m = String(d.getMinutes()).padStart(2,"0");
+      const ap = h >= 12 ? "PM" : "AM";
+      h = h % 12 || 12;
+      return `${h}:${m} ${ap}`;
+    }
+    function generateLogId() {
+      return "LOG-" + Math.random().toString(36).substring(2,8).toUpperCase();
+    }
+
+    // ==========================================
+    // INIT
+    // ==========================================
+    function init() {
+      hideLoading();
+
+      // ---- Dept grid selection ----
+      $deptGrid.querySelectorAll(".dept-option").forEach(opt => {
+        opt.addEventListener("click", () => {
+          $deptGrid.querySelectorAll(".dept-option").forEach(o => o.classList.remove("selected"));
+          opt.classList.add("selected");
+          state.selectedDept = opt.dataset.dept;
+          $errDept.classList.remove("visible");
+          $errCreds.style.display = "none";
+        });
+      });
+
+      // ---- Login button ----
+      $btnLogin.addEventListener("click", handleLogin);
+      // Allow Enter key on password to submit
+      $loginPassword.addEventListener("keydown", e => { if (e.key === "Enter") handleLogin(); });
+
+      // ---- Back buttons ----
+      $btnBackToLogin.addEventListener("click", () => showScreen("login"));
+      $btnBackToSess.addEventListener("click",  () => {
+        state.attendance = {};
+        showScreen("session");
+      });
+
+      // ---- Load roster ----
+      $btnLoadRoster.addEventListener("click", handleLoadRoster);
+
+      // ---- Bulk actions ----
+      $btnAllPresent.addEventListener("click", () => bulkMark("1"));
+      $btnAllAbsent.addEventListener("click",  () => bulkMark("0"));
+
+      // ---- CSV ----
+      $btnCsv.addEventListener("click", downloadCSV);
+    }
+
+    // ==========================================
+    // HANDLE LOGIN (Screen 1 → Screen 2)
+    // Validates credentials and department match.
+    // ==========================================
+    function handleLogin() {
+      const userId   = $loginUserId.value.trim();
+      const password = $loginPassword.value.trim();
+      const dept     = state.selectedDept;
+
+      // Reset errors
+      $errUserId.classList.remove("visible");
+      $errPassword.classList.remove("visible");
+      $errDept.classList.remove("visible");
+      $errCreds.style.display = "none";
+
+      let valid = true;
+      if (!userId)   { $errUserId.classList.add("visible");   valid = false; }
+      if (!password) { $errPassword.classList.add("visible"); valid = false; }
+      if (!dept)     { $errDept.classList.add("visible");     valid = false; }
+      if (!valid) return;
+
+      // ==========================================
+      // TODO: FACULTY USER ID & PASSWORD VERIFICATION LOGIC
+      // This block checks the entered credentials against FACULTY_CREDENTIALS.
+      //
+      // HOW TO EDIT:
+      // 1. Add faculty to the FACULTY_CREDENTIALS object near the top of the <script>.
+      // 2. The dept must MATCH the one stored in FACULTY_CREDENTIALS for that user.
+      // 3. If you want to remove the department check (anyone can log into any dept),
+      //    delete the line: "&& record.dept === dept"
+      // ==========================================
+      const record = FACULTY_CREDENTIALS[userId];
+      const isValid = record && record.password === password && record.dept === dept;
+
+      if (!isValid) {
+        $errCreds.style.display = "block";
+        $loginPassword.value = "";
+        $loginPassword.focus();
+        return;
+      }
+
+      // Credentials valid — save faculty info
+      state.faculty = { userId, name: record.name, dept };
+
+      // Update the session screen banner
+      $bannerName.textContent = record.name;
+      $bannerDept.textContent = dept + " · " + (DEPT_NAMES[dept] || dept);
+
+      showScreen("session");
+    }
+
+    // ==========================================
+    // HANDLE LOAD ROSTER (Screen 2 → Screen 3)
+    // ==========================================
+    function handleLoadRoster() {
+      const subject = $subjectName.value.trim();
+      const year    = $currentYear.value.trim();
+      const batch   = $batchName.value.trim();
+      const day     = $dayOfAttending.value.trim();
+
+      // Reset errors
+      ["err-subject","err-year","err-batch","err-day"].forEach(id => {
+        document.getElementById(id).classList.remove("visible");
+      });
+
+      let valid = true;
+      if (!subject) { document.getElementById("err-subject").classList.add("visible"); valid = false; }
+      if (!year)    { document.getElementById("err-year").classList.add("visible");    valid = false; }
+      if (!batch)   { document.getElementById("err-batch").classList.add("visible");   valid = false; }
+      if (!day)     { document.getElementById("err-day").classList.add("visible");     valid = false; }
+      if (!valid) return;
+
+      state.session = { subject, currentYear: year, batch, dayOfAttending: day };
+      state.attendance = {};
+
+      fetchStudents();
+    }
+
+    // ==========================================
+    // FETCH STUDENTS FROM WEBHOOK (GET)
+    // Falls back to hardcoded data on failure.
+    // Filters by Department AND Batch.
+    // ==========================================
+    async function fetchStudents() {
+      showLoading("Fetching student roster…");
+
+      let students = [];
+      let usedFallback = false;
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
+        const res = await fetch(
+          `${WEBHOOK_URL}?action=getStudents&dept=${encodeURIComponent(state.faculty.dept)}&batch=${encodeURIComponent(state.session.batch)}`,
+          { method: "GET", signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+
+        students = Array.isArray(data) ? data
+                 : Array.isArray(data.students) ? data.students
+                 : (() => { throw new Error("Unexpected response shape"); })();
+
+      } catch (err) {
+        students = FALLBACK_STUDENTS;
+        usedFallback = true;
+        console.warn("Fetch failed — using fallback:", err.message);
+      }
+
+      hideLoading();
+
+      // Filter by dept AND batch (case-insensitive batch match)
+      state.allStudents = students;
+      const batchLower = state.session.batch.trim().toLowerCase();
+      state.filteredStudents = students.filter(s =>
+        s.SHD_Department === state.faculty.dept &&
+        (s.Batch || "").trim().toLowerCase() === batchLower
+      );
+
+      renderRoster(state.filteredStudents);
+      showScreen("roster");
+
+      if (usedFallback) {
+        showToast("⚠ Offline — showing sample data", "error");
+      } else {
+        showToast(`Roster loaded · ${state.filteredStudents.length} students`, "info");
+      }
+    }
+
+    // ==========================================
+    // RENDER ROSTER — grouped by Name_of_School
+    // ==========================================
+    function renderRoster(students) {
+      $studentList.innerHTML = "";
+      renderSessionPills();
+      updateStats();
+
+      if (students.length === 0) {
+        $studentList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p>No students found for <strong>${state.faculty.dept}</strong> — Batch <strong>${state.session.batch}</strong>.<br>
+            Check the batch name or update the fallback student data.</p>
+          </div>`;
+        return;
+      }
+
+      // Group by Name_of_School
+      const groups = {};
+      students.forEach(stu => {
+        const school = stu.Name_of_School || "Other";
+        if (!groups[school]) groups[school] = [];
+        groups[school].push(stu);
+      });
+
+      Object.keys(groups).sort().forEach(school => {
+        const header = document.createElement("div");
+        header.className = "school-group-header";
+        header.innerHTML = `🏫 ${school} <span class="school-count">${groups[school].length}</span>`;
+        $studentList.appendChild(header);
+
+        groups[school].forEach(stu => {
+          $studentList.appendChild(createStudentCard(stu));
+        });
+      });
+    }
+
+    // ==========================================
+    // CREATE STUDENT CARD
+    // ==========================================
+    function createStudentCard(stu) {
+      const card = document.createElement("div");
+      card.className = "student-card";
+      card.dataset.enrollment = stu.Enrollment_No;
+
+      card.innerHTML = `
+        <div class="stu-info">
+          <div class="stu-name">${stu.Student_Name}</div>
+          <div class="stu-meta">${stu.Enrollment_No} · ${stu.Name_of_School || "—"} · Batch ${stu.Batch || "—"}</div>
+        </div>
+        <div class="action-btns">
+          <button class="btn-present" data-status="1" title="Mark Present">1</button>
+          <button class="btn-absent"  data-status="0" title="Mark Absent">0</button>
+        </div>`;
+
+      card.querySelectorAll(".btn-present, .btn-absent").forEach(btn => {
+        btn.addEventListener("click", () => handleAttendanceMark(stu, btn.dataset.status, card));
+      });
+
+      return card;
+    }
+
+    // ==========================================
+    // HANDLE ATTENDANCE MARK (tap 1 or 0)
+    // ==========================================
+    function handleAttendanceMark(stu, status, card) {
+      state.attendance[stu.Enrollment_No] = status;
+
+      card.classList.remove("marked-present", "marked-absent");
+      card.classList.add(status === "1" ? "marked-present" : "marked-absent");
+
+      const bp = card.querySelector(".btn-present");
+      const ba = card.querySelector(".btn-absent");
+      bp.classList.toggle("active",   status === "1");
+      bp.classList.toggle("inactive", status === "0");
+      ba.classList.toggle("active",   status === "0");
+      ba.classList.toggle("inactive", status === "1");
+
+      updateStats();
+      postAttendanceRecord(stu, status);
+    }
+
+    // ==========================================
+    // BULK MARK ALL PRESENT / ABSENT
+    // ==========================================
+    function bulkMark(status) {
+      state.filteredStudents.forEach(stu => {
+        const card = document.querySelector(`.student-card[data-enrollment="${stu.Enrollment_No}"]`);
+        if (card) handleAttendanceMark(stu, status, card);
+      });
+      showToast(status === "1" ? "All marked Present" : "All marked Absent", "info");
+    }
+
+    // ==========================================
+    // POST TO WEBHOOK (background, non-blocking)
+    // ==========================================
+    async function postAttendanceRecord(stu, status) {
+      const payload = {
+        Log_ID:            generateLogId(),
+        Date:              getTodayFormatted(),
+        Time:              getTimeFormatted(),
+        Faculty_Name:      state.faculty.name,
+        Student_Name:      stu.Student_Name,
+        Enrollment_No:     stu.Enrollment_No,
+        Name_of_School:    stu.Name_of_School || "",
+        Year_of_Admission: stu.Year_of_Admission || "",
+        Current_Year:      state.session.currentYear,
+        SHD_Department:    state.faculty.dept,
+        Subject:           state.session.subject,
+        Day_of_Attending:  state.session.dayOfAttending,
+        Batch:             state.session.batch,
+        Attendance_Status: status,
+      };
+
+      try {
+        const res = await fetch(WEBHOOK_URL, {
+          method:  "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body:    JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        showToast(status === "1" ? "✔ Present saved!" : "✘ Absent saved!", "success");
+      } catch (err) {
+        console.error("POST failed:", err);
+        showToast("Saved locally · Sync failed", "error");
+      }
+    }
+
+    // ==========================================
+    // UPDATE STATS BAR
+    // ==========================================
+    function updateStats() {
+      const total   = state.filteredStudents.length;
+      const present = Object.values(state.attendance).filter(v => v === "1").length;
+      const absent  = Object.values(state.attendance).filter(v => v === "0").length;
+      $statTotal.textContent   = total;
+      $statPresent.textContent = present;
+      $statAbsent.textContent  = absent;
+    }
+
+    // ==========================================
+    // RENDER SESSION PILLS
+    // ==========================================
+    function renderSessionPills() {
+      const s = state.session;
+      const f = state.faculty;
+      $sessionPills.innerHTML = `
+        <div class="session-pill">📅 <span>${getTodayFormatted()}</span></div>
+        <div class="session-pill">🏛 <span>${f.dept}</span></div>
+        <div class="session-pill">👤 <span>${f.name}</span></div>
+        <div class="session-pill">📖 <span>${s.subject}</span></div>
+        <div class="session-pill">🗓 <span>${s.dayOfAttending}</span></div>
+        <div class="session-pill">🎓 <span>${s.currentYear}</span></div>
+        <div class="session-pill">👥 Batch: <span>${s.batch}</span></div>
+      `;
+    }
+
+    // ==========================================
+    // DOWNLOAD CSV
+    // ==========================================
+    function downloadCSV() {
+      const s = state.session;
+      const f = state.faculty;
+      const headers = [
+        "Log_ID","Date","Time","Faculty_Name","Student_Name","Enrollment_No",
+        "Name_of_School","Year_of_Admission","Current_Year","SHD_Department",
+        "Subject","Day_of_Attending","Batch","Attendance_Status"
+      ];
+      const rows = [headers.join(",")];
+
+      state.filteredStudents.forEach(stu => {
+        const status = state.attendance[stu.Enrollment_No] ?? "";
+        rows.push([
+          generateLogId(), getTodayFormatted(), getTimeFormatted(),
+          `"${f.name}"`, `"${stu.Student_Name}"`, stu.Enrollment_No,
+          stu.Name_of_School || "", stu.Year_of_Admission || "",
+          `"${s.currentYear}"`, f.dept, `"${s.subject}"`,
+          s.dayOfAttending, `"${s.batch}"`, status,
+        ].join(","));
+      });
+
+      const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url;
+      // Filename format: SHD_FacultyName_Department_DD-MM-YYYY_Batch.csv
+      const safeName = f.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+      a.download = `SHD_${safeName}_${f.dept}_${getTodayFormatted().replace(/\//g,"-")}_Batch-${s.batch}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("📥 CSV downloaded!", "info");
+    }
+
+    // ==========================================
+    // START THE APP
+    // ==========================================
+    init();
+
+    // ==========================================
+    // TODO: FUTURE EXPANSION AREAS
+    // ============================================================
+    // 1. SEARCH BAR ON ROSTER: Add an <input type="search"> above
+    //    the student list. On every keystroke, hide cards whose
+    //    student name doesn't include the typed text.
+    //
+    // 2. OFFLINE / PWA: Register a service worker to cache this
+    //    file and fallback data so it works with zero internet.
+    //    Add: navigator.serviceWorker.register('/sw.js')
+    //
+    // 3. NEW SESSION BUTTON: Add a "Start New Session" button on
+    //    Screen 3 that resets state.session and state.attendance
+    //    and navigates back to Screen 2.
+    //
+    // 4. LATE MARK: Add a third button per student for "Late"
+    //    and send Attendance_Status: "L" to the webhook.
+    //
+    // 5. VIEW PAST RECORDS: Add a GET call to the webhook with
+    //    action=getHistory&dept=HP&date=DD/MM/YYYY and render a
+    //    read-only view of past attendance logs.
+    // ============================================================
+  </script>
+
+</body>
+</html>
